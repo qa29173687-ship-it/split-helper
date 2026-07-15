@@ -67,7 +67,7 @@
         </div>
         <div>
           <h4 class="font-bold text-indigo-900 text-sm mb-1">第三步：回國即時切換幣別結算 ✈️</h4>
-          <p>回國要給錢時，在 **「4. 結算結果」** 將「結算匯款幣別」切換成 `TWD (新台幣)`，系統會自動抓取最新的即時匯率，把原本記的日圓或美金，直接換算成台幣匯款指引！</p>
+          <p>回國要給錢時，在 **「4. 結算結果」** 將「結算匯款幣別」切換成 `TWD (新台幣)`。你可以手動修改為你們當時在台灣銀行換錢的**「實際現金匯率」**，系統會一秒幫大家算好最精準的台幣轉帳金額！</p>
         </div>
       </div>
     </section>
@@ -122,7 +122,7 @@
       <div id="expenseList" class="space-y-2 divide-y divide-gray-100 max-h-48 overflow-y-auto"></div>
     </section>
 
-    <!-- 4. 結算結果 (支援即時匯率切換幣別) -->
+    <!-- 4. 結算結果 (支援即時匯率切換幣別與手動微調) -->
     <section class="bg-white p-5 rounded-2xl shadow border-2 border-indigo-100">
       <div class="flex justify-between items-center mb-3">
         <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -131,16 +131,28 @@
         <button onclick="clearAllData()" class="text-xs text-red-500 hover:underline">清空重來</button>
       </div>
 
-      <!-- 結算時切換幣別（含即時匯率換算） -->
-      <div class="bg-indigo-50 p-3 rounded-xl mb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <label class="text-xs font-bold text-indigo-900">💰 選擇最後結算匯款幣別：</label>
-        <select id="settlementCurrency" onchange="changeSettlementCurrency(this.value)" class="border border-indigo-200 rounded-lg px-2 py-1 text-xs bg-white text-indigo-900 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
-          <option value="TWD">TWD (新台幣 $)</option>
-          <option value="JPY">JPY (日圓 ¥)</option>
-          <option value="KRW">KRW (韓元 ₩)</option>
-          <option value="USD">USD (美金 $)</option>
-          <option value="EUR">EUR (歐元 €)</option>
-        </select>
+      <!-- 結算時切換幣別與匯率調整區 -->
+      <div class="bg-indigo-50 p-4 rounded-xl mb-3 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <label class="text-xs font-bold text-indigo-900">💰 選擇最後結算匯款幣別：</label>
+          <select id="settlementCurrency" onchange="changeSettlementCurrency(this.value)" class="border border-indigo-200 rounded-lg px-2 py-1 text-xs bg-white text-indigo-900 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="TWD">TWD (新台幣 $)</option>
+            <option value="JPY">JPY (日圓 ¥)</option>
+            <option value="KRW">KRW (韓元 ₩)</option>
+            <option value="USD">USD (美金 $)</option>
+            <option value="EUR">EUR (歐元 €)</option>
+          </select>
+        </div>
+        
+        <!-- 🌟 新增：手動修改為台銀現金匯率的輸入框 🌟 -->
+        <div id="customRateContainer" class="pt-2 border-t border-indigo-100/50 flex items-center justify-between gap-2 hidden">
+          <label id="customRateLabel" class="text-xs font-bold text-indigo-800">✍️ 自訂兌換匯率：</label>
+          <div class="flex items-center gap-1.5">
+            <span id="rateEquationLeft" class="text-xs text-indigo-900 font-medium">1 JPY =</span>
+            <input id="customRateInput" type="number" step="any" oninput="applyCustomRate(this.value)" class="w-24 border border-indigo-200 rounded px-2 py-0.5 text-xs text-center font-bold font-mono text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <span id="rateEquationRight" class="text-xs text-indigo-900 font-medium">TWD</span>
+          </div>
+        </div>
       </div>
       <p id="rateTip" class="text-[10px] text-indigo-600 font-medium mb-2 hidden"></p>
       
@@ -200,6 +212,7 @@
     let tripName = "";
     let tripCurrency = "TWD"; 
     let settlementCurrency = "TWD"; 
+    let customRateOverride = null; // 紀錄使用者手動輸入的匯率
 
     // 幣別符號對照表
     const currencySymbols = { 
@@ -240,6 +253,13 @@
     // 計算匯率轉換：從「記帳幣別」轉換成「結算幣別」
     function convertCurrency(amount, fromCur, toCur) {
       if (fromCur === toCur) return amount;
+      
+      // 如果有手動輸入自訂匯率，就直接用自訂匯率計算
+      if (customRateOverride !== null && customRateOverride > 0) {
+        return Math.round((amount * customRateOverride) * 100) / 100;
+      }
+
+      // 否則使用系統/API 匯率
       const fromRate = exchangeRates[fromCur] || 1.0;
       const toRate = exchangeRates[toCur] || 1.0;
       const amountInTWD = amount * fromRate;
@@ -305,6 +325,7 @@
         if (oldTripCurrency !== tripCurrency) {
           settlementCurrency = tripCurrency;
           document.getElementById('settlementCurrency').value = settlementCurrency;
+          customRateOverride = null; // 幣別改變時，重設自訂匯率
         }
 
         if (document.activeElement !== document.getElementById('tripNameInput')) {
@@ -351,12 +372,25 @@
     function updateTripCurrency(val) {
       tripCurrency = val;
       settlementCurrency = val;
+      customRateOverride = null; // 重設自訂匯率
       document.getElementById('settlementCurrency').value = val;
       syncToCloud();
     }
 
     function changeSettlementCurrency(val) {
       settlementCurrency = val;
+      customRateOverride = null; // 切換幣別後先重置，讓系統自動帶入新推薦匯率
+      calculateSettlementsAndSummary();
+    }
+
+    // 使用者在欄位中輸入自訂的現金匯率時觸發
+    function applyCustomRate(val) {
+      const rate = parseFloat(val);
+      if (!isNaN(rate) && rate > 0) {
+        customRateOverride = rate;
+      } else {
+        customRateOverride = null;
+      }
       calculateSettlementsAndSummary();
     }
 
@@ -429,6 +463,7 @@
         tripName = "";
         tripCurrency = "TWD";
         settlementCurrency = "TWD";
+        customRateOverride = null;
         document.getElementById('tripNameInput').value = '';
         roomRef.set(null);
       }
@@ -479,23 +514,39 @@
       const settlementContainer = document.getElementById('settlementContainer');
       const summaryDiv = document.getElementById('tripSummary');
       const rateTip = document.getElementById('rateTip');
+      const customRateContainer = document.getElementById('customRateContainer');
 
       if (members.length === 0 || expenses.length === 0) {
         settlementContainer.innerHTML = "目前無足夠資訊計算結算。";
         summaryDiv.innerText = "新增帳款後，這裡會自動生成精彩旅程流水帳！";
         rateTip.classList.add('hidden');
+        customRateContainer.classList.add('hidden');
         return;
       }
 
-      // 顯示匯率提醒資訊
+      // 判斷是否需要進行幣別轉換
       if (tripCurrency !== settlementCurrency) {
+        customRateContainer.classList.remove('hidden');
+        document.getElementById('rateEquationLeft').innerText = `1 ${tripCurrency} =`;
+        document.getElementById('rateEquationRight').innerText = `${settlementCurrency}`;
+
+        // 取得系統/API 建議匯率
         const fromRate = exchangeRates[tripCurrency];
         const toRate = exchangeRates[settlementCurrency];
-        const directRate = (fromRate / toRate).toFixed(4);
-        rateTip.innerText = `🔄 即時匯率換算：1 ${tripCurrency} ≈ ${directRate} ${settlementCurrency}`;
+        const defaultCalculatedRate = parseFloat((fromRate / toRate).toFixed(4));
+
+        // 如果目前沒有覆蓋值，將輸入框填入建議匯率
+        if (customRateOverride === null) {
+          document.getElementById('customRateInput').value = defaultCalculatedRate;
+        }
+
+        const currentUsingRate = customRateOverride !== null ? customRateOverride : defaultCalculatedRate;
+        rateTip.innerText = `🔄 正在使用 ${customRateOverride !== null ? '✍️ 自訂' : '📢 系統'} 匯率：1 ${tripCurrency} = ${currentUsingRate} ${settlementCurrency}`;
         rateTip.classList.remove('hidden');
       } else {
         rateTip.classList.add('hidden');
+        customRateContainer.classList.add('hidden');
+        customRateOverride = null;
       }
 
       const originalBalances = {};
@@ -551,8 +602,6 @@
         
         let settledAmount = Math.round(Math.min(d.amount, c.amount) * 100) / 100;
         
-        // 🌟 核心修正：Key 只用名字組合，不再綁定「金額」或「幣別」！
-        // 這樣切換幣別時，還款狀態才能完美保留在資料庫中
         const pKey = `${d.name}_to_${c.name}`;
         const currentStatus = paymentStatuses[pKey] || 'unpaid';
         const colorClass = statusColors[currentStatus] || statusColors['unpaid'];
@@ -588,7 +637,7 @@
         settlementContainer.innerHTML = `<div class="text-center py-2 text-gray-500">🎉 太棒了！大家帳目剛好完全扯平，不需要轉帳！</div>`;
       }
 
-      // 計算總花費（顯示記帳原始總花費與結算折算總花費）
+      // 計算總花費
       const totalCostOriginal = expenses.reduce((sum, e) => sum + e.amount, 0);
       const totalCostSettlement = convertCurrency(totalCostOriginal, tripCurrency, settlementCurrency);
 
@@ -603,7 +652,8 @@
       summaryText += `====================\n`;
       summaryText += `💸 旅程總花費：${tripCurrency} ${tripSymbol}${totalCostOriginal.toLocaleString()} 元\n`;
       if (tripCurrency !== settlementCurrency) {
-        summaryText += `🔄 折合結算金額：${settlementCurrency} ${settlementSymbol}${totalCostSettlement.toLocaleString()} 元\n`;
+        const activeRate = customRateOverride !== null ? customRateOverride : (exchangeRates[tripCurrency] / exchangeRates[settlementCurrency]);
+        summaryText += `🔄 折合結算金額：${settlementCurrency} ${settlementSymbol}${totalCostSettlement.toLocaleString()} 元 (使用匯率: ${activeRate})\n`;
       }
       summaryText += `👥 參與總人數：${members.length} 人 (${members.join('、')})\n`;
       summaryText += `====================\n\n`;
