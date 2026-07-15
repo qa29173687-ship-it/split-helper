@@ -20,7 +20,7 @@
 
   <div class="max-w-md mx-auto p-4 space-y-6">
 
-    <!-- 0. 房間管理（已改為可手動輸入） -->
+    <!-- 0. 房間管理 -->
     <section class="bg-gradient-to-r from-indigo-50 to-blue-50 p-5 rounded-2xl shadow border border-indigo-100 space-y-3">
       <div>
         <h3 class="text-sm font-bold text-indigo-900">🏠 雲端房間（記帳本）設定</h3>
@@ -34,6 +34,39 @@
         </button>
       </div>
       <p id="roomStatusTip" class="text-[11px] text-emerald-600 font-medium">✨ 目前已成功連線至該房間</p>
+    </section>
+
+    <!-- 💡 產品使用說明 (折疊式設計 - 已移至最上方) -->
+    <section class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+      <button onclick="toggleInstructions()" class="w-full flex justify-between items-center p-4 bg-indigo-50/50 hover:bg-indigo-50 transition text-left focus:outline-none">
+        <span class="text-sm font-bold text-indigo-900 flex items-center gap-1.5">💡 第一次使用？查看超簡單使用說明</span>
+        <span id="arrowIcon" class="text-xs text-indigo-700 transform transition-transform duration-200">▼</span>
+      </button>
+      
+      <div id="instructionsContent" class="hidden p-5 border-t border-gray-100 bg-white text-xs text-gray-600 space-y-4 leading-relaxed">
+        <div>
+          <h4 class="font-bold text-indigo-900 text-sm mb-1">第一步：自訂或切換記帳房間</h4>
+          <p>在最上方 **「雲端房間設定」** 中，輸入你們這次旅程的代稱（例如 `yilan2026` ），然後按 Enter。網頁會立即切換到專屬的空白雲端帳本。</p>
+        </div>
+        <div>
+          <h4 class="font-bold text-indigo-900 text-sm mb-1">第二步：把連結分享給朋友</h4>
+          <p>點擊 **「複製房間連結」**，直接貼到你們的 LINE 群組。所有點擊這個連結的朋友，都能在自己的手機上看到一模一樣的記帳畫面，實現 **多人同時線上即時記帳**！</p>
+        </div>
+        <div>
+          <h4 class="font-bold text-indigo-900 text-sm mb-1">第三步：新增成員與消費</h4>
+          <ul class="list-disc pl-4 space-y-1 mt-1">
+            <li>先在 **「1. 群組成員」** 輸入所有人名字並新增。</li>
+            <li>有消費發生時，在 **「2. 新增消費」** 輸入項目、總金額，選擇付款人，並勾選誰需要一起分攤（預設全選），點擊「加入這筆帳」。</li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="font-bold text-indigo-900 text-sm mb-1">第四步：追蹤與結算</h4>
+          <p>系統會利用演算法自動計算出 **「最少轉帳次數」** 的省時還款路徑！在 **「4. 結算結果」** 中，大家轉帳完後可以直接在選單中把狀態改為「已付」，雲端會同步更新。最後還能在 **「5. 旅程回顧」** 一鍵複製精美的流水帳明細分享回群組喔！</p>
+        </div>
+        <div class="pt-2 border-t border-gray-100 text-[10px] text-gray-400 text-center">
+          ⚡ 本工具使用 Firebase Realtime 雲端同步技術 · 數據不佔手機空間
+        </div>
+      </div>
     </section>
 
     <!-- 1. 成員管理 -->
@@ -150,6 +183,19 @@
     let paymentStatuses = {};
     let tripName = "";
 
+    // 使用說明折疊展開控制
+    function toggleInstructions() {
+      const content = document.getElementById('instructionsContent');
+      const arrow = document.getElementById('arrowIcon');
+      if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        arrow.style.transform = 'rotate(180deg)';
+      } else {
+        content.classList.add('hidden');
+        arrow.style.transform = 'rotate(0deg)';
+      }
+    }
+
     // 取得網址房間參數
     function getQueryParam(param) {
       const urlParams = new URLSearchParams(window.location.search);
@@ -160,7 +206,6 @@
     function initRoom() {
       let paramRoom = getQueryParam('room');
       if (!paramRoom) {
-        // 如果網址沒有代碼，隨機產生一個
         paramRoom = 'room-' + Math.random().toString(36).substr(2, 6);
         window.history.replaceState(null, null, `?room=${paramRoom}`);
       }
@@ -171,7 +216,6 @@
 
     // 連線到指定的 Firebase 房間節點
     function connectToFirebaseRoom() {
-      // 如果原本有舊的監聽，先關閉它
       if (roomRef) {
         roomRef.off();
       }
@@ -199,9 +243,9 @@
       });
     }
 
-    // 當使用者在輸入框手動輸入完畢（按 Enter 或點旁邊移開）時觸發切換
+    // 當使用者在輸入框手動輸入完畢觸發切換
     function switchRoom(newRoomName) {
-      const cleanedName = newRoomName.trim().replace(/[^a-zA-Z0-9-_]/g, ''); // 過濾特殊符號
+      const cleanedName = newRoomName.trim().replace(/[^a-zA-Z0-9-_]/g, '');
       if (!cleanedName) {
         alert("請輸入有效的房間名稱！");
         document.getElementById('roomInput').value = roomId;
@@ -209,9 +253,7 @@
       }
       
       roomId = cleanedName;
-      // 同步修改瀏覽器網址列，方便之後重整能停留在同一頁
       window.history.replaceState(null, null, `?room=${roomId}`);
-      // 重新連線資料庫
       connectToFirebaseRoom();
     }
 
@@ -274,6 +316,7 @@
       syncToCloud();
     }
 
+    // 狀態同步
     function updatePaymentStatus(key, status) {
       paymentStatuses[key] = status;
       syncToCloud();
@@ -481,7 +524,6 @@
       });
     }
 
-    // 啟動初始化
     window.onload = initRoom;
   </script>
 </body>
