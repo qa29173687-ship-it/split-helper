@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>極簡分帳小幫手 (流水帳總覽版)</title>
+  <!-- 引入 Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans pb-12">
+
+  <!-- 導覽列 -->
+  <nav class="bg-indigo-600 text-white p-4 shadow-md sticky top-0 z-50">
+    <h1 class="text-xl font-bold text-center">💸 極簡分帳小幫手</h1>
+  </nav>
+
+  <div class="max-w-md mx-auto p-4 space-y-6">
+
+    <!-- 1. 成員管理 -->
+    <section class="bg-white p-5 rounded-2xl shadow">
+      <h2 class="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+        👥 1. 群組成員
+      </h2>
+      <div class="flex gap-2 mb-4">
+        <input id="memberInput" type="text" placeholder="輸入成員名字 (例如：小明)" class="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <button onclick="addMember()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition">新增</button>
+      </div>
+      <div id="memberList" class="flex flex-wrap gap-2"></div>
+    </section>
+
+    <!-- 2. 新增消費 -->
+    <section class="bg-white p-5 rounded-2xl shadow">
+      <h2 class="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+        📝 2. 新增消費
+      </h2>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">消費項目名稱</label>
+          <input id="expenseName" type="text" placeholder="例如：晚餐、計程車" class="w-full border rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">總金額 ($)</label>
+            <input id="expenseAmount" type="number" placeholder="金額" class="w-full border rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">誰付的錢？</label>
+            <select id="expensePayer" class="w-full border rounded-lg px-3 py-2 text-sm bg-white"></select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">誰要分攤？(預設全選)</label>
+          <div id="sharersContainer" class="space-y-1 max-h-32 overflow-y-auto border rounded-lg p-2"></div>
+        </div>
+        <button onclick="addExpense()" class="w-full bg-emerald-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-emerald-700 transition">
+          加入這筆帳
+        </button>
+      </div>
+    </section>
+
+    <!-- 3. 帳目明細 -->
+    <section class="bg-white p-5 rounded-2xl shadow">
+      <h2 class="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+        📜 3. 帳目明細
+      </h2>
+      <div id="expenseList" class="space-y-2 divide-y divide-gray-100 max-h-48 overflow-y-auto"></div>
+    </section>
+
+    <!-- 4. 結算結果 -->
+    <section class="bg-white p-5 rounded-2xl shadow border-2 border-indigo-100">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+          ⚖️ 4. 結算匯款指引與還款狀態
+        </h2>
+        <button onclick="clearAllData()" class="text-xs text-red-500 hover:underline">清空重來</button>
+      </div>
+      
+      <!-- 【更新處】：改為動態渲染的還款列表 -->
+      <div id="settlementContainer" class="bg-gray-50 p-3 rounded-xl space-y-2 font-mono text-xs">
+        目前無結算資訊。
+      </div>
+
+      <button onclick="copySettlementResult()" class="w-full mt-3 bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition">
+        📋 複製還款指引
+      </button>
+    </section>
+
+    <!-- 5. 旅程總覽 -->
+    <section class="bg-gradient-to-br from-amber-50 to-orange-50 p-5 rounded-2xl shadow border border-amber-200">
+      <h2 class="text-lg font-bold text-amber-900 mb-3 flex items-center gap-2">
+        📊 5. ✨ 旅程回顧與消費清單 ✨
+      </h2>
+      
+      <div class="mb-4">
+        <label class="block text-xs font-bold text-amber-800 mb-1">✏️ 自訂旅程名稱（會同步顯示在回顧中）：</label>
+        <input id="tripNameInput" type="text" placeholder="例如：宜蘭兩日遊 / 沖繩度假團" oninput="calculateSettlementsAndSummary()" class="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white/90 focus:outline-none focus:ring-2 focus:ring-amber-500">
+      </div>
+
+      <div id="tripSummary" class="bg-white/80 p-4 rounded-xl text-xs font-mono whitespace-pre-wrap text-gray-800 leading-relaxed border border-amber-100">
+        新增帳款後，這裡會自動生成精彩旅程流水帳！
+      </div>
+      <button onclick="copyResult('tripSummary')" class="w-full mt-3 bg-amber-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-amber-700 transition">
+        🎉 複製旅程回顧分享到群組
+      </button>
+    </section>
+
+  </div>
+
+  <script>
+    let members = JSON.parse(localStorage.getItem('split_members')) || [];
+    let expenses = JSON.parse(localStorage.getItem('split_expenses')) || [];
+    // 用來單獨存儲「誰應該給誰錢」的還款支付狀態，避免清空帳目時出錯
+    let paymentStatuses = JSON.parse(localStorage.getItem('split_payment_statuses')) || {};
+
+    updateUI();
+
+    function addMember() {
+      const input = document.getElementById('memberInput');
+      const name = input.value.trim();
+      if (!name) return alert('請輸入名字！');
+      if (members.includes(name)) return alert('成員名稱重複了！');
+      members.push(name);
+      input.value = '';
+      saveAndRefresh();
+    }
+
+    function removeMember(name) {
+      members = members.filter(m => m !== name);
+      saveAndRefresh();
+    }
+
+    function addExpense() {
+      const name = document.getElementById('expenseName').value.trim();
+      const amount = parseFloat(document.getElementById('expenseAmount').value);
+      const payer = document.getElementById('expensePayer').value;
+      
+      if (!name) return alert('請輸入消費項目！');
+      if (isNaN(amount) || amount <= 0) return alert('請輸入正確的金額！');
+      if (!payer) return alert('請先新增成員並選擇付款人！');
+
+      const sharers = [];
+      members.forEach(m => {
+        const checkbox = document.getElementById(`share-${m}`);
+        if (checkbox && checkbox.checked) sharers.push(m);
+      });
+
+      if (sharers.length === 0) return alert('請至少選擇一位分攤人！');
+
+      expenses.push({ id: Date.now(), name, amount, payer, sharers });
+      document.getElementById('expenseName').value = '';
+      document.getElementById('expenseAmount').value = '';
+      saveAndRefresh();
+    }
+
+    function deleteExpense(id) {
+      expenses = expenses.filter(e => e.id !== id);
+      saveAndRefresh();
+    }
+
+    // 【新增功能】：更新特定結算還款項目的狀態
+    function updatePaymentStatus(key, status) {
+      paymentStatuses[key] = status;
+      localStorage.setItem('split_payment_statuses', JSON.stringify(paymentStatuses));
+      calculateSettlementsAndSummary(); // 重新渲染包含狀態的文字
+    }
+
+    function clearAllData() {
+      if(confirm('確定要清空所有資料重新開始嗎？')) {
+        members = [];
+        expenses = [];
+        paymentStatuses = {};
+        document.getElementById('tripNameInput').value = '';
+        localStorage.removeItem('split_payment_statuses');
+        saveAndRefresh();
+      }
+    }
+
+    function saveAndRefresh() {
+      localStorage.setItem('split_members', JSON.stringify(members));
+      localStorage.setItem('split_expenses', JSON.stringify(expenses));
+      updateUI();
+    }
+
+    function updateUI() {
+      const memberList = document.getElementById('memberList');
+      memberList.innerHTML = members.map(m => `
+        <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-medium">
+          ${m} <button onclick="removeMember('${m}')" class="hover:text-red-500 font-bold">×</button>
+        </span>
+      `).join('') || '<p class="text-xs text-gray-400">目前無成員</p>';
+
+      document.getElementById('expensePayer').innerHTML = members.map(m => `<option value="${m}">${m}</option>`).join('');
+      document.getElementById('sharersContainer').innerHTML = members.map(m => `
+        <label class="flex items-center gap-2 text-sm text-gray-700 py-1">
+          <input type="checkbox" id="share-${m}" checked class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+          ${m}
+        </label>
+      `).join('') || '<p class="text-xs text-gray-400">請先新增成員</p>';
+
+      // 消費明細回歸純淨：只顯示代墊紀錄，不放還款選項
+      document.getElementById('expenseList').innerHTML = expenses.map(e => `
+        <div class="flex justify-between items-center py-2 text-sm text-gray-600">
+          <div>
+            <div class="font-semibold text-gray-800">${e.name}</div>
+            <div class="text-xs text-gray-400">由 ${e.payer} 付了 $${e.amount} (由 ${e.sharers.join(', ')} 支付)</div>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="font-bold text-gray-700">$${e.amount}</span>
+            <button onclick="deleteExpense(${e.id})" class="text-red-400 hover:text-red-600 text-xs">刪除</button>
+          </div>
+        </div>
+      `).join('') || '<p class="text-xs text-gray-400 py-2">目前尚無帳款明細</p>';
+
+      calculateSettlementsAndSummary();
+    }
+
+    function calculateSettlementsAndSummary() {
+      const settlementContainer = document.getElementById('settlementContainer');
+      const summaryDiv = document.getElementById('tripSummary');
+
+      if (members.length === 0 || expenses.length === 0) {
+        settlementContainer.innerHTML = "目前無足夠資訊計算結算。";
+        summaryDiv.innerText = "新增帳款後，這裡會自動生成精彩旅程流水帳！";
+        return;
+      }
+
+      const balances = {};
+      members.forEach(m => balances[m] = 0);
+
+      expenses.forEach(exp => {
+        balances[exp.payer] += exp.amount;
+        const splitShare = exp.amount / exp.sharers.length;
+        exp.sharers.forEach(s => balances[s] -= splitShare);
+      });
+
+      let debtors = [];
+      let creditors = [];
+      for (let person in balances) {
+        const bal = Math.round(balances[person] * 100) / 100;
+        if (bal < -0.01) debtors.push({ name: person, amount: Math.abs(bal) });
+        else if (bal > 0.01) creditors.push({ name: person, amount: bal });
+      }
+
+      let transactions = [];
+      let htmlTransactions = [];
+      let dIdx = 0, cIdx = 0;
+      let tempDebtors = JSON.parse(JSON.stringify(debtors));
+      let tempCreditors = JSON.parse(JSON.stringify(creditors));
+
+      const statusColors = {
+        'unpaid': 'bg-gray-100 text-gray-600 border-gray-300',
+        'cash': 'bg-amber-100 text-amber-800 border-amber-300 font-semibold',
+        'mplus': 'bg-blue-100 text-blue-800 border-blue-300 font-semibold',
+        'linepay': 'bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold'
+      };
+
+      const statusTextMap = {
+        'unpaid': ' (⏳ 未還款)',
+        'cash': ' (💵 已付-現金)',
+        'mplus': ' (📱 已付-M+)',
+        'linepay': ' (🟢 已付-LINE Pay)'
+      };
+
+      while (dIdx < tempDebtors.length && cIdx < tempCreditors.length) {
+        let d = tempDebtors[dIdx];
+        let c = tempCreditors[cIdx];
+        let settled = Math.round(Math.min(d.amount, c.amount));
+        
+        // 建立唯一 key 用來記錄這兩個人之間的還款狀態
+        const pKey = `${d.name}_to_${c.name}_${settled}`;
+        const currentStatus = paymentStatuses[pKey] || 'unpaid';
+        const colorClass = statusColors[currentStatus] || statusColors['unpaid'];
+        const textStatus = statusTextMap[currentStatus] || statusTextMap['unpaid'];
+
+        // 純文字版本 (供複製輸出用)
+        transactions.push(`👉 【${d.name}】 應匯給 【${c.name}】 💰 $${settled} 元${textStatus}`);
+
+        // HTML 互動版本 (顯示在第 4 區塊，帶有下拉選單)
+        htmlTransactions.push(`
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between py-1.5 border-b border-gray-100 last:border-0 gap-2">
+            <div class="text-gray-700">
+              👉 <span class="font-bold text-red-600">${d.name}</span> 應匯給 <span class="font-bold text-emerald-600">${c.name}</span> 💰 <span class="font-bold font-sans">$${settled}</span> 元
+            </div>
+            <div>
+              <select onchange="updatePaymentStatus('${pKey}', this.value)" class="text-[11px] border rounded px-1.5 py-0.5 ${colorClass} focus:outline-none">
+                <option value="unpaid" ${currentStatus === 'unpaid' ? 'selected' : ''}>⏳ 未還款</option>
+                <option value="cash" ${currentStatus === 'cash' ? 'selected' : ''}>💵 現金已付</option>
+                <option value="mplus" ${currentStatus === 'mplus' ? 'selected' : ''}>📱 M+已付</option>
+                <option value="linepay" ${currentStatus === 'linepay' ? 'selected' : ''}>🟢 LINE Pay已付</option>
+              </select>
+            </div>
+          </div>
+        `);
+
+        d.amount -= settled;
+        c.amount -= settled;
+        if (d.amount < 0.01) dIdx++;
+        if (c.amount < 0.01) cIdx++;
+      }
+
+      // 渲染第 4 區塊的 UI
+      if (htmlTransactions.length > 0) {
+        settlementContainer.innerHTML = `<div class="divide-y divide-gray-100">${htmlTransactions.join('')}</div>`;
+      } else {
+        settlementContainer.innerHTML = `<div class="text-center py-2 text-gray-500">🎉 太棒了！大家帳目剛好完全扯平，不需要轉帳！</div>`;
+      }
+
+      // 渲染第 5 區塊的旅程回顧文字
+      const totalCost = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+      let expenseItemsText = "";
+      expenses.forEach((e, index) => {
+        expenseItemsText += `${index + 1}. 📍 ${e.name.padEnd(8, ' ')} 💰 $${e.amount.toLocaleString()} 元 (由 ${e.payer} 付款)\n`;
+      });
+
+      const customTripName = document.getElementById('tripNameInput').value.trim();
+      const titleText = customTripName ? `🏕️ 【${customTripName} 回顧】` : `🏕️ 【我們的精彩旅程回顧】`;
+
+      let summaryText = `${titleText}\n`;
+      summaryText += `====================\n`;
+      summaryText += `💸 旅程總花費：$${totalCost.toLocaleString()} 元\n`;
+      summaryText += `👥 參與總人數：${members.length} 人 (${members.join('、')})\n`;
+      summaryText += `====================\n\n`;
+      summaryText += `📜 【完整消費流水帳明細】\n`;
+      summaryText += `--------------------\n`;
+      summaryText += expenseItemsText;
+      summaryText += `\n====================\n`;
+      summaryText += `⚖️ 【最終最簡匯款動作與狀態】\n`;
+      summaryText += transactions.length > 0 ? transactions.join('\n') : "🎉 大家剛好完全扯平，免轉帳！";
+      summaryText += `\n====================\n✈️ 感謝大家的配合，期待下次再一起出遊！✨`;
+
+      summaryDiv.innerText = summaryText;
+    }
+
+    // 專門用來複製第 4 區塊純文字格式的函式
+    function copySettlementResult() {
+      // 串出純文字格式
+      const customTripName = document.getElementById('tripNameInput').value.trim();
+      const prefix = customTripName ? `📊 【${customTripName} 結算指引】\n` : `📊 【結算匯款指引】\n`;
+      
+      const lines = [];
+      const statusTextMap = { 'unpaid': ' (⏳ 未還款)', 'cash': ' (💵 已付-現金)', 'mplus': ' (📱 已付-M+)', 'linepay': ' (🟢 已付-LINE Pay)' };
+      
+      // 重新跑一次交易計算來抓最新的文字狀態
+      const balances = {};
+      members.forEach(m => balances[m] = 0);
+      expenses.forEach(exp => {
+        balances[exp.payer] += exp.amount;
+        const splitShare = exp.amount / exp.sharers.length;
+        exp.sharers.forEach(s => balances[s] -= splitShare);
+      });
+      let debtors = [], creditors = [];
+      for (let person in balances) {
+        const bal = Math.round(balances[person] * 100) / 100;
+        if (bal < -0.01) debtors.push({ name: person, amount: Math.abs(bal) });
+        else if (bal > 0.01) creditors.push({ name: person, amount: bal });
+      }
+      let dIdx = 0, cIdx = 0;
+      while (dIdx < debtors.length && cIdx < creditors.length) {
+        let d = debtors[dIdx]; let c = creditors[cIdx];
+        let settled = Math.round(Math.min(d.amount, c.amount));
+        const pKey = `${d.name}_to_${c.name}_${settled}`;
+        const currentStatus = paymentStatuses[pKey] || 'unpaid';
+        lines.push(`👉 【${d.name}】 應匯給 【${c.name}】 💰 $${settled} 元${statusTextMap[currentStatus]}`);
+        d.amount -= settled; c.amount -= settled;
+        if (d.amount < 0.01) dIdx++;
+        if (c.amount < 0.01) cIdx++;
+      }
+
+      const text = prefix + "====================\n" + (lines.length > 0 ? lines.join('\n') : "🎉 大家帳目完全扯平！");
+      
+      navigator.clipboard.writeText(text).then(() => {
+        alert('複製還款指引成功！');
+      }).catch(() => alert('複製失敗，請手動複製'));
+    }
+
+    function copyResult(elementId) {
+      const text = document.getElementById(elementId).innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        alert('複製成功！趕快去 LINE 群組貼上分享吧！✈️');
+      }).catch(err => {
+        alert('複製失敗，請手動全選複製');
+      });
+    }
+  </script>
+</body>
+</html>
