@@ -3,18 +3,35 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>極簡分帳小幫手 (流水帳總覽版)</title>
+  <title>出遊分帳小幫手 - 旅遊算帳流水帳生成器，免下載一鍵複製</title>
+  <meta name="description" content="最簡單好用的出遊分帳工具！支援多人多筆代墊、自動計算最簡還款路徑，一鍵生成精彩旅程流水帳文字。">
   <!-- 引入 Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入 Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 </head>
 <body class="bg-gray-50 min-h-screen font-sans pb-12">
 
   <!-- 導覽列 -->
   <nav class="bg-indigo-600 text-white p-4 shadow-md sticky top-0 z-50">
-    <h1 class="text-xl font-bold text-center">💸 極簡分帳小幫手</h1>
+    <h1 class="text-xl font-bold text-center">💸 雲端即時分帳小幫手</h1>
+    <!-- 顯示目前的房間號碼 -->
+    <div id="roomDisplay" class="text-center text-xs opacity-80 mt-1 font-mono">正在連線至雲端房間...</div>
   </nav>
 
   <div class="max-w-md mx-auto p-4 space-y-6">
+
+    <!-- 0. 房間分享邀請 -->
+    <section class="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-2xl shadow border border-indigo-100 flex justify-between items-center">
+      <div>
+        <h3 class="text-sm font-bold text-indigo-900">🔗 多人連線同步中</h3>
+        <p class="text-xs text-indigo-700">複製專屬網址傳給朋友，就能共同記帳！</p>
+      </div>
+      <button onclick="copyRoomLink()" class="bg-white text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm hover:bg-indigo-50">
+        複製房間連結
+      </button>
+    </section>
 
     <!-- 1. 成員管理 -->
     <section class="bg-white p-5 rounded-2xl shadow">
@@ -75,7 +92,6 @@
         <button onclick="clearAllData()" class="text-xs text-red-500 hover:underline">清空重來</button>
       </div>
       
-      <!-- 【更新處】：改為動態渲染的還款列表 -->
       <div id="settlementContainer" class="bg-gray-50 p-3 rounded-xl space-y-2 font-mono text-xs">
         目前無結算資訊。
       </div>
@@ -93,7 +109,7 @@
       
       <div class="mb-4">
         <label class="block text-xs font-bold text-amber-800 mb-1">✏️ 自訂旅程名稱（會同步顯示在回顧中）：</label>
-        <input id="tripNameInput" type="text" placeholder="例如：宜蘭兩日遊 / 沖繩度假團" oninput="calculateSettlementsAndSummary()" class="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white/90 focus:outline-none focus:ring-2 focus:ring-amber-500">
+        <input id="tripNameInput" type="text" placeholder="例如：宜蘭兩日遊 / 沖繩度假團" oninput="updateTripName(this.value)" class="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white/90 focus:outline-none focus:ring-2 focus:ring-amber-500">
       </div>
 
       <div id="tripSummary" class="bg-white/80 p-4 rounded-xl text-xs font-mono whitespace-pre-wrap text-gray-800 leading-relaxed border border-amber-100">
@@ -107,12 +123,71 @@
   </div>
 
   <script>
-    let members = JSON.parse(localStorage.getItem('split_members')) || [];
-    let expenses = JSON.parse(localStorage.getItem('split_expenses')) || [];
-    // 用來單獨存儲「誰應該給誰錢」的還款支付狀態，避免清空帳目時出錯
-    let paymentStatuses = JSON.parse(localStorage.getItem('split_payment_statuses')) || {};
+    // --- 房間 ID 處理邏輯 ---
+    function getQueryParam(param) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(param);
+    }
 
-    updateUI();
+    let roomId = getQueryParam('room');
+    if (!roomId) {
+      roomId = 'room-' + Math.random().toString(36).substr(2, 6);
+      window.history.replaceState(null, null, `?room=${roomId}`);
+    }
+    document.getElementById('roomDisplay').innerText = `🏠 雲端房間代碼：${roomId}`;
+
+    // --- 自動填入你圖片中的 Firebase 連線資訊 ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyAGiy0v-e8PhIhQC9tgJ9nEziQSbMhLg5s",
+      authDomain: "triphelper-27b5a.firebaseapp.com",
+      databaseURL: "https://triphelper-27b5a-default-rtdb.firebaseio.com",
+      projectId: "triphelper-27b5a",
+      storageBucket: "triphelper-27b5a.firebasestorage.app",
+      messagingSenderId: "2629564678",
+      appId: "1:2629564678:web:4faae79a8b324a27918687",
+      measurementId: "G-78D5G2PR1J"
+    };
+
+    // 初始化 Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const roomRef = db.ref('rooms/' + roomId);
+
+    // 本地變數狀態
+    let members = [];
+    let expenses = [];
+    let paymentStatuses = {};
+    let tripName = "";
+
+    // 監聽雲端資料庫
+    roomRef.on('value', (snapshot) => {
+      const data = snapshot.val() || {};
+      members = data.members || [];
+      expenses = data.expenses ? Object.values(data.expenses) : [];
+      paymentStatuses = data.paymentStatuses || {};
+      tripName = data.tripName || "";
+      
+      if (document.activeElement !== document.getElementById('tripNameInput')) {
+        document.getElementById('tripNameInput').value = tripName;
+      }
+
+      updateUI();
+    });
+
+    function copyRoomLink() {
+      navigator.clipboard.writeText(window.location.href).then(() => {
+        alert('房間連線網址複製成功！快傳給一起出遊的朋友吧！');
+      });
+    }
+
+    function syncToCloud() {
+      roomRef.update({
+        members: members,
+        expenses: expenses,
+        paymentStatuses: paymentStatuses,
+        tripName: tripName
+      });
+    }
 
     function addMember() {
       const input = document.getElementById('memberInput');
@@ -121,12 +196,12 @@
       if (members.includes(name)) return alert('成員名稱重複了！');
       members.push(name);
       input.value = '';
-      saveAndRefresh();
+      syncToCloud();
     }
 
     function removeMember(name) {
       members = members.filter(m => m !== name);
-      saveAndRefresh();
+      syncToCloud();
     }
 
     function addExpense() {
@@ -149,36 +224,33 @@
       expenses.push({ id: Date.now(), name, amount, payer, sharers });
       document.getElementById('expenseName').value = '';
       document.getElementById('expenseAmount').value = '';
-      saveAndRefresh();
+      syncToCloud();
     }
 
     function deleteExpense(id) {
       expenses = expenses.filter(e => e.id !== id);
-      saveAndRefresh();
+      syncToCloud();
     }
 
-    // 【新增功能】：更新特定結算還款項目的狀態
     function updatePaymentStatus(key, status) {
       paymentStatuses[key] = status;
-      localStorage.setItem('split_payment_statuses', JSON.stringify(paymentStatuses));
-      calculateSettlementsAndSummary(); // 重新渲染包含狀態的文字
+      syncToCloud();
+    }
+
+    function updateTripName(val) {
+      tripName = val.trim();
+      syncToCloud();
     }
 
     function clearAllData() {
-      if(confirm('確定要清空所有資料重新開始嗎？')) {
+      if(confirm('確定要清空雲端這個房間內的所有資料嗎？')) {
         members = [];
         expenses = [];
         paymentStatuses = {};
+        tripName = "";
         document.getElementById('tripNameInput').value = '';
-        localStorage.removeItem('split_payment_statuses');
-        saveAndRefresh();
+        roomRef.set(null);
       }
-    }
-
-    function saveAndRefresh() {
-      localStorage.setItem('split_members', JSON.stringify(members));
-      localStorage.setItem('split_expenses', JSON.stringify(expenses));
-      updateUI();
     }
 
     function updateUI() {
@@ -197,7 +269,6 @@
         </label>
       `).join('') || '<p class="text-xs text-gray-400">請先新增成員</p>';
 
-      // 消費明細回歸純淨：只顯示代墊紀錄，不放還款選項
       document.getElementById('expenseList').innerHTML = expenses.map(e => `
         <div class="flex justify-between items-center py-2 text-sm text-gray-600">
           <div>
@@ -266,16 +337,13 @@
         let c = tempCreditors[cIdx];
         let settled = Math.round(Math.min(d.amount, c.amount));
         
-        // 建立唯一 key 用來記錄這兩個人之間的還款狀態
         const pKey = `${d.name}_to_${c.name}_${settled}`;
         const currentStatus = paymentStatuses[pKey] || 'unpaid';
         const colorClass = statusColors[currentStatus] || statusColors['unpaid'];
         const textStatus = statusTextMap[currentStatus] || statusTextMap['unpaid'];
 
-        // 純文字版本 (供複製輸出用)
         transactions.push(`👉 【${d.name}】 應匯給 【${c.name}】 💰 $${settled} 元${textStatus}`);
 
-        // HTML 互動版本 (顯示在第 4 區塊，帶有下拉選單)
         htmlTransactions.push(`
           <div class="flex flex-col sm:flex-row sm:items-center justify-between py-1.5 border-b border-gray-100 last:border-0 gap-2">
             <div class="text-gray-700">
@@ -298,23 +366,19 @@
         if (c.amount < 0.01) cIdx++;
       }
 
-      // 渲染第 4 區塊的 UI
       if (htmlTransactions.length > 0) {
         settlementContainer.innerHTML = `<div class="divide-y divide-gray-100">${htmlTransactions.join('')}</div>`;
       } else {
         settlementContainer.innerHTML = `<div class="text-center py-2 text-gray-500">🎉 太棒了！大家帳目剛好完全扯平，不需要轉帳！</div>`;
       }
 
-      // 渲染第 5 區塊的旅程回顧文字
       const totalCost = expenses.reduce((sum, e) => sum + e.amount, 0);
-
       let expenseItemsText = "";
       expenses.forEach((e, index) => {
         expenseItemsText += `${index + 1}. 📍 ${e.name.padEnd(8, ' ')} 💰 $${e.amount.toLocaleString()} 元 (由 ${e.payer} 付款)\n`;
       });
 
-      const customTripName = document.getElementById('tripNameInput').value.trim();
-      const titleText = customTripName ? `🏕️ 【${customTripName} 回顧】` : `🏕️ 【我們的精彩旅程回顧】`;
+      const titleText = tripName ? `🏕️ 【${tripName} 回顧】` : `🏕️ 【我們的精彩旅程回顧】`;
 
       let summaryText = `${titleText}\n`;
       summaryText += `====================\n`;
@@ -327,21 +391,16 @@
       summaryText += `\n====================\n`;
       summaryText += `⚖️ 【最終最簡匯款動作與狀態】\n`;
       summaryText += transactions.length > 0 ? transactions.join('\n') : "🎉 大家剛好完全扯平，免轉帳！";
-      summaryText += `\n====================\n✈️ 感謝大家的配合，期待下次再一起出遊！✨`;
+      summaryText += `\n====================\n✈️ 感謝大家的配合，期待下次再一起出遊！✨\n📊 本次記帳使用【極簡分帳小幫手】：${window.location.origin}${window.location.pathname}?room=${roomId}`;
 
       summaryDiv.innerText = summaryText;
     }
 
-    // 專門用來複製第 4 區塊純文字格式的函式
     function copySettlementResult() {
-      // 串出純文字格式
-      const customTripName = document.getElementById('tripNameInput').value.trim();
-      const prefix = customTripName ? `📊 【${customTripName} 結算指引】\n` : `📊 【結算匯款指引】\n`;
-      
+      const titleText = tripName ? `📊 【${tripName} 結算指引】\n` : `📊 【結算匯款指引】\n`;
       const lines = [];
       const statusTextMap = { 'unpaid': ' (⏳ 未還款)', 'cash': ' (💵 已付-現金)', 'mplus': ' (📱 已付-M+)', 'linepay': ' (🟢 已付-LINE Pay)' };
       
-      // 重新跑一次交易計算來抓最新的文字狀態
       const balances = {};
       members.forEach(m => balances[m] = 0);
       expenses.forEach(exp => {
@@ -367,11 +426,8 @@
         if (c.amount < 0.01) cIdx++;
       }
 
-      const text = prefix + "====================\n" + (lines.length > 0 ? lines.join('\n') : "🎉 大家帳目完全扯平！");
-      
-      navigator.clipboard.writeText(text).then(() => {
-        alert('複製還款指引成功！');
-      }).catch(() => alert('複製失敗，請手動複製'));
+      const text = titleText + "====================\n" + (lines.length > 0 ? lines.join('\n') : "🎉 大家帳目完全扯平！");
+      navigator.clipboard.writeText(text).then(() => alert('複製還款指引成功！')).catch(() => alert('複製失敗'));
     }
 
     function copyResult(elementId) {
@@ -379,7 +435,7 @@
       navigator.clipboard.writeText(text).then(() => {
         alert('複製成功！趕快去 LINE 群組貼上分享吧！✈️');
       }).catch(err => {
-        alert('複製失敗，請手動全選複製');
+        alert('請手動全選複製');
       });
     }
   </script>
