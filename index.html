@@ -14,23 +14,26 @@
 <body class="bg-gray-50 min-h-screen font-sans pb-12">
 
   <!-- 導覽列 -->
-  <nav class="bg-indigo-600 text-white p-4 shadow-md sticky top-0 z-50">
-    <h1 class="text-xl font-bold text-center">💸 雲端即時分帳小幫手</h1>
-    <!-- 顯示目前的房間號碼 -->
-    <div id="roomDisplay" class="text-center text-xs opacity-80 mt-1 font-mono">正在連線至雲端房間...</div>
+  <nav class="bg-indigo-600 text-white p-4 shadow-md sticky top-0 z-50 text-center">
+    <h1 class="text-xl font-bold">💸 雲端即時分帳小幫手</h1>
   </nav>
 
   <div class="max-w-md mx-auto p-4 space-y-6">
 
-    <!-- 0. 房間分享邀請 -->
-    <section class="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-2xl shadow border border-indigo-100 flex justify-between items-center">
+    <!-- 0. 房間管理（已改為可手動輸入） -->
+    <section class="bg-gradient-to-r from-indigo-50 to-blue-50 p-5 rounded-2xl shadow border border-indigo-100 space-y-3">
       <div>
-        <h3 class="text-sm font-bold text-indigo-900">🔗 多人連線同步中</h3>
-        <p class="text-xs text-indigo-700">複製專屬網址傳給朋友，就能共同記帳！</p>
+        <h3 class="text-sm font-bold text-indigo-900">🏠 雲端房間（記帳本）設定</h3>
+        <p class="text-xs text-indigo-700">你可以手動輸入自訂名稱來切換不同團的記帳本。</p>
       </div>
-      <button onclick="copyRoomLink()" class="bg-white text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm hover:bg-indigo-50">
-        複製房間連結
-      </button>
+      
+      <div class="flex gap-2">
+        <input id="roomInput" type="text" placeholder="輸入自訂房間名 (如: yilan2026)" onchange="switchRoom(this.value)" class="flex-1 border border-indigo-200 rounded-lg px-3 py-2 text-sm font-mono text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+        <button onclick="copyRoomLink()" class="bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs font-bold shadow-sm hover:bg-indigo-700 transition shrink-0">
+          複製房間連結
+        </button>
+      </div>
+      <p id="roomStatusTip" class="text-[11px] text-emerald-600 font-medium">✨ 目前已成功連線至該房間</p>
     </section>
 
     <!-- 1. 成員管理 -->
@@ -123,20 +126,7 @@
   </div>
 
   <script>
-    // --- 房間 ID 處理邏輯 ---
-    function getQueryParam(param) {
-      const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get(param);
-    }
-
-    let roomId = getQueryParam('room');
-    if (!roomId) {
-      roomId = 'room-' + Math.random().toString(36).substr(2, 6);
-      window.history.replaceState(null, null, `?room=${roomId}`);
-    }
-    document.getElementById('roomDisplay').innerText = `🏠 雲端房間代碼：${roomId}`;
-
-    // --- 自動填入你圖片中的 Firebase 連線資訊 ---
+    // --- Firebase 連線設定 ---
     const firebaseConfig = {
       apiKey: "AIzaSyAGiy0v-e8PhIhQC9tgJ9nEziQSbMhLg5s",
       authDomain: "triphelper-27b5a.firebaseapp.com",
@@ -151,36 +141,88 @@
     // 初始化 Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
-    const roomRef = db.ref('rooms/' + roomId);
-
-    // 本地變數狀態
+    
+    // 全域變數狀態
+    let roomId = "";
+    let roomRef = null;
     let members = [];
     let expenses = [];
     let paymentStatuses = {};
     let tripName = "";
 
-    // 監聽雲端資料庫
-    roomRef.on('value', (snapshot) => {
-      const data = snapshot.val() || {};
-      members = data.members || [];
-      expenses = data.expenses ? Object.values(data.expenses) : [];
-      paymentStatuses = data.paymentStatuses || {};
-      tripName = data.tripName || "";
-      
-      if (document.activeElement !== document.getElementById('tripNameInput')) {
-        document.getElementById('tripNameInput').value = tripName;
+    // 取得網址房間參數
+    function getQueryParam(param) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(param);
+    }
+
+    // 初始化房間號碼
+    function initRoom() {
+      let paramRoom = getQueryParam('room');
+      if (!paramRoom) {
+        // 如果網址沒有代碼，隨機產生一個
+        paramRoom = 'room-' + Math.random().toString(36).substr(2, 6);
+        window.history.replaceState(null, null, `?room=${paramRoom}`);
+      }
+      roomId = paramRoom;
+      document.getElementById('roomInput').value = roomId;
+      connectToFirebaseRoom();
+    }
+
+    // 連線到指定的 Firebase 房間節點
+    function connectToFirebaseRoom() {
+      // 如果原本有舊的監聽，先關閉它
+      if (roomRef) {
+        roomRef.off();
       }
 
-      updateUI();
-    });
+      document.getElementById('roomStatusTip').innerText = `⏳ 正在同步房間 [${roomId}] 的資料...`;
+      document.getElementById('roomStatusTip').className = "text-[11px] text-amber-500 font-medium";
+
+      roomRef = db.ref('rooms/' + roomId);
+
+      // 開始監聽新房間資料
+      roomRef.on('value', (snapshot) => {
+        const data = snapshot.val() || {};
+        members = data.members || [];
+        expenses = data.expenses ? Object.values(data.expenses) : [];
+        paymentStatuses = data.paymentStatuses || {};
+        tripName = data.tripName || "";
+        
+        if (document.activeElement !== document.getElementById('tripNameInput')) {
+          document.getElementById('tripNameInput').value = tripName;
+        }
+
+        updateUI();
+        document.getElementById('roomStatusTip').innerText = `✨ 目前已成功連線至房間 [${roomId}]`;
+        document.getElementById('roomStatusTip').className = "text-[11px] text-emerald-600 font-medium";
+      });
+    }
+
+    // 當使用者在輸入框手動輸入完畢（按 Enter 或點旁邊移開）時觸發切換
+    function switchRoom(newRoomName) {
+      const cleanedName = newRoomName.trim().replace(/[^a-zA-Z0-9-_]/g, ''); // 過濾特殊符號
+      if (!cleanedName) {
+        alert("請輸入有效的房間名稱！");
+        document.getElementById('roomInput').value = roomId;
+        return;
+      }
+      
+      roomId = cleanedName;
+      // 同步修改瀏覽器網址列，方便之後重整能停留在同一頁
+      window.history.replaceState(null, null, `?room=${roomId}`);
+      // 重新連線資料庫
+      connectToFirebaseRoom();
+    }
 
     function copyRoomLink() {
       navigator.clipboard.writeText(window.location.href).then(() => {
-        alert('房間連線網址複製成功！快傳給一起出遊的朋友吧！');
+        alert(`房間 [${roomId}] 的專屬雲端網址已複製成功！快傳給一起出遊的朋友吧！`);
       });
     }
 
     function syncToCloud() {
+      if (!roomRef) return;
       roomRef.update({
         members: members,
         expenses: expenses,
@@ -243,7 +285,7 @@
     }
 
     function clearAllData() {
-      if(confirm('確定要清空雲端這個房間內的所有資料嗎？')) {
+      if(confirm(`確定要清空雲端房間 [${roomId}] 內的所有資料嗎？`)) {
         members = [];
         expenses = [];
         paymentStatuses = {};
@@ -438,6 +480,9 @@
         alert('請手動全選複製');
       });
     }
+
+    // 啟動初始化
+    window.onload = initRoom;
   </script>
 </body>
 </html>
